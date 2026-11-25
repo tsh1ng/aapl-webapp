@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSV 股價檢視器</title>
+<style>
+  :root {
+    --bg: #f6f8fc;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e5eaf2;
+    --accent: #2563eb;
+    --accent-weak: #eff6ff;
+    --danger: #b91c1c;
+    --danger-bg: #fef2f2;
+    --danger-line: #fecaca;
+    --warn-bg: #fffbeb;
+    --warn-line: #fde68a;
+    --warn-ink: #92400e;
+    --radius: 14px;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; }
+
+  body {
+    font-family: "Segoe UI", "Microsoft JhengHei", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.55;
+    padding: 36px 16px 56px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  [hidden] { display: none !important; }
+
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  header h1 { font-size: 26px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+
+  header p { margin: 0; color: var(--muted); font-size: 14px; max-width: 62ch; }
+
+  code {
+    background: #eef2f8;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 0.9em;
+    font-family: "Cascadia Mono", Consolas, monospace;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  }
+
+  /* ---------- drop zone ---------- */
+  .drop {
+    margin-top: 22px;
+    padding: 26px 20px;
+    text-align: center;
+    border: 2px dashed var(--line);
+    border-radius: var(--radius);
+    background: var(--card);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .drop:hover, .drop:focus-visible, .drop.drag {
+    border-color: var(--accent);
+    background: var(--accent-weak);
+    outline: none;
+  }
+
+  .drop-icon { font-size: 26px; line-height: 1; }
+
+  .drop-title { margin: 8px 0 4px; font-size: 15px; font-weight: 600; }
+
+  .drop-title .link { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+  .drop-hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+
+  /* ---------- messages ---------- */
+  .alert {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border: 1px solid var(--danger-line);
+    background: var(--danger-bg);
+    border-radius: var(--radius);
+    color: var(--danger);
+  }
+
+  .alert strong { display: block; font-size: 15px; margin-bottom: 4px; }
+
+  .alert p { margin: 4px 0 0; font-size: 13.5px; color: #7f1d1d; }
+
+  .alert .alert-hint { color: #8a4646; font-size: 12.5px; }
+
+  .notice {
+    margin: 14px 0 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--warn-ink);
+    background: var(--warn-bg);
+    border: 1px solid var(--warn-line);
+    border-radius: 10px;
+  }
+
+  /* ---------- stats ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 13px 16px;
+  }
+
+  .stat-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .stat-value.small { font-size: 14px; font-weight: 600; }
+
+  /* ---------- chart ---------- */
+  .chart-card { margin-top: 16px; padding: 16px 18px 18px; }
+
+  .chart-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .chart-head h2 { margin: 0; font-size: 15px; }
+
+  .chart-sub {
+    font-size: 12px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+  }
+
+  .chart-box { position: relative; height: 320px; }
+
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .tip {
+    position: absolute;
+    z-index: 2;
+    transform: translate(-50%, -130%);
+    padding: 6px 9px;
+    border-radius: 8px;
+    background: #0f172a;
+    color: #f8fafc;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: nowrap;
+    pointer-events: none;
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.28);
+  }
+
+  .tip b { font-weight: 650; }
+
+  footer { margin-top: 28px; text-align: center; font-size: 12px; color: var(--muted); }
+
+  @media (max-width: 620px) {
+    body { padding: 24px 12px 40px; }
+    header h1 { font-size: 22px; }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    .chart-box { height: 240px; }
+    .chart-sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>CSV 股價檢視器</h1>
+    <p>上載含 <code>Date</code> 與 <code>Close</code> 的 CSV 檔，即時查看筆數、日期範圍、收盤價統計與走勢圖。所有計算都在你的瀏覽器內完成，檔案不會上傳到任何伺服器。</p>
+  </header>
+
+  <section class="drop" id="drop" tabindex="0" role="button" aria-label="選擇或拖放 CSV 檔案">
+    <input type="file" id="fileInput" accept=".csv,text/csv" hidden />
+    <div class="drop-icon" aria-hidden="true">📈</div>
+    <p class="drop-title">把 CSV 拖到這裡，或 <span class="link">點擊選擇檔案</span></p>
+    <p class="drop-hint" id="fileInfo">第一行必須是欄位名稱，例如：Date,Open,High,Low,Close,Volume</p>
+  </section>
+
+  <section class="alert" id="error" role="alert" hidden>
+    <strong id="errorTitle"></strong>
+    <p id="errorDetail"></p>
+    <p class="alert-hint" id="errorHint"></p>
+  </section>
+
+  <p class="notice" id="notice" hidden></p>
+
+  <section id="results" hidden aria-live="polite">
+    <div class="stats">
+      <div class="stat">
+        <span class="stat-label">資料筆數</span>
+        <strong class="stat-value" id="statRows">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">日期範圍</span>
+        <strong class="stat-value small" id="statRange">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">平均 Close</span>
+        <strong class="stat-value" id="statMean">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">最低 Close</span>
+        <strong class="stat-value" id="statMin">–</strong>
+      </div>
+      <div class="stat">
+        <span class="stat-label">最高 Close</span>
+        <strong class="stat-value" id="statMax">–</strong>
+      </div>
+    </div>
+
+    <div class="card chart-card">
+      <div class="chart-head">
+        <h2>Close 走勢</h2>
+        <span class="chart-sub" id="chartSub"></span>
+      </div>
+      <div class="chart-box">
+        <canvas id="chart"></canvas>
+        <div class="tip" id="tip" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>純前端 · 無後端 · 無 API key · 可直接雙擊開啟</footer>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ============================================================
+     Pure logic — no DOM access below this line
+     ============================================================ */
+  /* __PURE_START__ */
+
+  class UIError extends Error {
+    constructor(title, detail, hint) {
+      super(title);
+      this.name = 'UIError';
+      this.title = title;
+      this.detail = detail || '';
+      this.hint = hint || '';
+    }
+  }
+
+  /**
+   * Minimal CSV parser: handles quoted fields, escaped quotes ("")
+   * and newlines inside quotes. Returns an array of rows (arrays of strings).
+   */
+  function parseCSV(text) {
+    const src = text.replace(/^\uFEFF/, '');
+    const rows = [];
+    let row = [];
+    let field = '';
+    let quoted = false;
+
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+
+      if (quoted) {
+        if (ch === '"') {
+          if (src[i + 1] === '"') {
+            field += '"';
+            i++;
+          } else {
+            quoted = false;
+          }
+        } else {
+          field += ch;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        quoted = true;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\n') {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
+      } else if (ch === '\r') {
+        /* ignore; \r\n is handled by the \n branch */
+      } else {
+        field += ch;
+      }
+    }
+
+    if (field !== '' || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+
+    return rows;
+  }
+
+  function parseDate(raw) {
+    const s = String(raw == null ? '' : raw).trim().replace(/^"|"$/g, '');
+    if (!s) return null;
+
+    let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (m) {
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      return Date.UTC(y, mo - 1, d);
+    }
+
+    m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (m) {
+      const mo = Number(m[1]);
+      const d = Number(m[2]);
+      const y = Number(m[3]);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+      return Date.UTC(y, mo - 1, d);
+    }
+
+    const t = Date.parse(s);
+    return Number.isNaN(t) ? null : t;
+  }
+
+  function parseNumber(raw) {
+    const s = String(raw == null ? '' : raw).trim().replace(/,/g, '').replace(/^"|"$/g, '');
+    if (!s) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function findColumn(header, name) {
+    for (let i = 0; i < header.length; i++) {
+      if (header[i].trim().toLowerCase() === name) return i;
+    }
+    return -1;
+  }
+
+  function analyse(text) {
+    const rows = parseCSV(text);
+
+    let headerRow = null;
+    let headerIndex = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].some(function (cell) { return String(cell).trim() !== ''; })) {
+        headerRow = rows[i];
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (!headerRow) {
+      throw new UIError(
+        '檔案是空的',
+        '找不到任何資料列。',
+        '請確認檔案是 CSV 文字檔，而且第一行是欄位名稱。'
+      );
+    }
+
+    const header = headerRow.map(function (h) { return String(h).trim().replace(/^"|"$/g, ''); });
+    const dateIdx = findColumn(header, 'date');
+    const closeIdx = findColumn(header, 'close');
+    const detected = header.filter(function (h) { return h !== ''; }).join('、');
+
+    if (dateIdx === -1 && closeIdx === -1) {
+      throw new UIError(
+        '找不到 Date 與 Close 欄位',
+        '第一行列出的欄位是：' + (detected || '（空白）'),
+        '第一行必須是欄位名稱，而且要包含 Date 與 Close，例如：Date,Open,High,Low,Close,Volume'
+      );
+    }
+
+    if (dateIdx === -1) {
+      throw new UIError(
+        '找不到 Date 欄位',
+        '第一行列出的欄位是：' + (detected || '（空白）'),
+        '請把日期欄改名為 Date，例如：Date,Close'
+      );
+    }
+
+    if (closeIdx === -1) {
+      throw new UIError(
+        '找不到 Close 欄位',
+        '第一行列出的欄位是：' + (detected || '（空白）'),
+        '請把收盤價欄改名為 Close；若只有 Adj Close，也請先改名為 Close。'
+      );
+    }
+
+    const points = [];
+    let skipped = 0;
+
+    for (let i = headerIndex + 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.every(function (c) { return String(c).trim() === ''; })) continue;
+
+      const t = parseDate(r[dateIdx]);
+      const close = parseNumber(r[closeIdx]);
+
+      if (t === null || close === null) {
+        skipped++;
+        continue;
+      }
+      points.push({ t: t, close: close });
+    }
+
+    if (points.length === 0) {
+      throw new UIError(
+        '沒有可用的資料',
+        '所有資料列都無法解析出有效的 Date 或 Close。',
+        'Date 格式建議用 2024-11-25，Close 必須是數字（例如 232.87）。'
+      );
+    }
+
+    points.sort(function (a, b) { return a.t - b.t; });
+
+    let sum = 0;
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const v = points[i].close;
+      sum += v;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+
+    return {
+      points: points,
+      skipped: skipped,
+      mean: sum / points.length,
+      min: min,
+      max: max
+    };
+  }
+  /* __PURE_END__ */
+
+  /* ============================================================
+     DOM wiring
+     ============================================================ */
+
+  const fmt = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtInt = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+
+  const els = {};
+  let current = null;
+  let hoverIndex = -1;
+
+  function $(id) { return document.getElementById(id); }
+
+  function fmtDate(ms) { return new Date(ms).toISOString().slice(0, 10); }
+
+  function shortDate(ms) { return new Date(ms).toISOString().slice(0, 7); }
+
+  function formatAxis(v) {
+    const a = Math.abs(v);
+    if (a >= 1e6) return (v / 1e6).toFixed(1) + 'M';
+    if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
+    if (a >= 100) return v.toFixed(0);
+    return v.toFixed(2);
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  function readFile(file) {
+    if (typeof file.text === 'function') return file.text();
+    return new Promise(function (resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function () { resolve(String(reader.result)); };
+      reader.onerror = function () { reject(reader.error || new Error('讀取失敗')); };
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  function showError(err) {
+    els.errorTitle.textContent = err.title || '發生錯誤';
+    els.errorDetail.textContent = err.detail || '';
+    els.errorHint.textContent = err.hint || '';
+    els.error.hidden = false;
+  }
+
+  function hideError() { els.error.hidden = true; }
+
+  function showResult(result, fileName) {
+    current = result;
+    hoverIndex = -1;
+
+    els.statRows.textContent = fmtInt.format(result.points.length);
+    els.statRange.textContent = fmtDate(result.points[0].t) + ' – ' + fmtDate(result.points[result.points.length - 1].t);
+    els.statMean.textContent = fmt.format(result.mean);
+    els.statMin.textContent = fmt.format(result.min);
+    els.statMax.textContent = fmt.format(result.max);
+    els.chartSub.textContent = fileName || '';
+
+    if (result.skipped > 0) {
+      els.notice.textContent = '已略過 ' + result.skipped + ' 行無法解析的資料（Date 或 Close 不是有效數值）。';
+      els.notice.hidden = false;
+    } else {
+      els.notice.hidden = true;
+    }
+
+    els.results.hidden = false;
+    els.tip.hidden = true;
+    requestAnimationFrame(draw);
+  }
+
+  async function loadFile(file) {
+    hideError();
+    els.notice.hidden = true;
+    els.fileInfo.textContent = '已選擇：' + file.name + '（' + formatBytes(file.size) + '）';
+
+    try {
+      const text = await readFile(file);
+      const result = analyse(text);
+      showResult(result, file.name);
+    } catch (err) {
+      current = null;
+      els.results.hidden = true;
+      if (err instanceof UIError) {
+        showError(err);
+      } else {
+        showError(new UIError('無法處理這個檔案', String((err && err.message) || err), '請確認它是有效的 CSV 文字檔（UTF-8）。'));
+      }
+    }
+  }
+
+  function draw() {
+    const canvas = els.canvas;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const W = Math.max(260, Math.round(rect.width));
+    const H = Math.max(180, Math.round(rect.height));
+    const pw = Math.round(W * dpr);
+    const ph = Math.round(H * dpr);
+
+    if (canvas.width !== pw || canvas.height !== ph) {
+      canvas.width = pw;
+      canvas.height = ph;
+    }
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    if (!current || current.points.length === 0) return;
+
+    const pts = current.points;
+    const pad = { l: 56, r: 14, t: 14, b: 30 };
+    const iw = W - pad.l - pad.r;
+    const ih = H - pad.t - pad.b;
+
+    const t0 = pts[0].t;
+    const t1 = pts[pts.length - 1].t;
+    const span = t1 - t0;
+    const single = pts.length === 1 || span <= 0;
+
+    const yPad = Math.max((current.max - current.min) * 0.08, 0.000001);
+    const lo = current.min - yPad;
+    const hi = current.max + yPad;
+
+    function X(t) {
+      return single ? pad.l + iw / 2 : pad.l + ((t - t0) / span) * iw;
+    }
+    function Y(v) {
+      return pad.t + ih - ((v - lo) / (hi - lo)) * ih;
+    }
+
+    ctx.font = '11px "Segoe UI", "Microsoft JhengHei", sans-serif';
+
+    // horizontal grid + y labels
+    const yTicks = 4;
+    for (let i = 0; i <= yTicks; i++) {
+      const v = lo + ((hi - lo) * i) / yTicks;
+      const y = Math.round(Y(v)) + 0.5;
+      ctx.strokeStyle = i === 0 ? '#cbd5e1' : '#eef2f7';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(W - pad.r, y);
+      ctx.stroke();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(formatAxis(v), pad.l - 8, y);
+    }
+
+    // x labels
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#94a3b8';
+
+    if (single) {
+      ctx.textAlign = 'center';
+      ctx.fillText(fmtDate(t0), X(t0), H - pad.b + 8);
+    } else {
+      const xTicks = 5;
+      for (let i = 0; i <= xTicks; i++) {
+        const t = t0 + (span * i) / xTicks;
+        const x = X(t);
+        ctx.textAlign = i === 0 ? 'left' : (i === xTicks ? 'right' : 'center');
+        ctx.fillText(shortDate(t), x, H - pad.b + 8);
+      }
+    }
+
+    // line + area
+    const px = [];
+    const py = [];
+
+    if (!single) {
+      const line = new Path2D();
+      for (let i = 0; i < pts.length; i++) {
+        const x = X(pts[i].t);
+        const y = Y(pts[i].close);
+        px.push(x);
+        py.push(y);
+        if (i === 0) line.moveTo(x, y);
+        else line.lineTo(x, y);
+      }
+
+      const area = new Path2D(line);
+      area.lineTo(X(t1), pad.t + ih);
+      area.lineTo(X(t0), pad.t + ih);
+      area.closePath();
+
+      const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + ih);
+      grad.addColorStop(0, 'rgba(37, 99, 235, 0.20)');
+      grad.addColorStop(1, 'rgba(37, 99, 235, 0.00)');
+      ctx.fillStyle = grad;
+      ctx.fill(area);
+
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+      ctx.stroke(line);
+
+      const lastX = X(t1);
+      const lastY = Y(pts[pts.length - 1].close);
+      ctx.beginPath();
+      ctx.arc(lastX, lastY, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    } else {
+      const x = X(pts[0].t);
+      const y = Y(pts[0].close);
+      px.push(x);
+      py.push(y);
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#2563eb';
+      ctx.fill();
+    }
+
+    current.px = px;
+    current.py = py;
+
+    // hover crosshair
+    if (hoverIndex >= 0 && hoverIndex < pts.length && px[hoverIndex] != null) {
+      const hx = px[hoverIndex];
+      const hy = py[hoverIndex];
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(15, 23, 42, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(hx, pad.t);
+      ctx.lineTo(hx, pad.t + ih);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.beginPath();
+      ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  function findNearest(x) {
+    const px = current.px || [];
+    if (px.length === 0) return -1;
+    if (px.length === 1) return 0;
+
+    let lo = 0;
+    let hi = px.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (px[mid] < x) lo = mid;
+      else hi = mid;
+    }
+    return Math.abs(px[lo] - x) <= Math.abs(px[hi] - x) ? lo : hi;
+  }
+
+  function onMove(event) {
+    if (!current) return;
+    const rect = els.canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const idx = findNearest(x);
+    if (idx < 0) return;
+
+    hoverIndex = idx;
+    draw();
+
+    const p = current.points[idx];
+    const left = Math.min(Math.max(current.px[idx], 80), rect.width - 80);
+    els.tip.innerHTML = fmtDate(p.t) + '<br><b>' + fmt.format(p.close) + '</b>';
+    els.tip.style.left = left + 'px';
+    els.tip.style.top = current.py[idx] + 'px';
+    els.tip.hidden = false;
+  }
+
+  function onLeave() {
+    hoverIndex = -1;
+    els.tip.hidden = true;
+    if (current) draw();
+  }
+
+  function init() {
+    els.drop = $('drop');
+    els.input = $('fileInput');
+    els.fileInfo = $('fileInfo');
+    els.error = $('error');
+    els.errorTitle = $('errorTitle');
+    els.errorDetail = $('errorDetail');
+    els.errorHint = $('errorHint');
+    els.notice = $('notice');
+    els.results = $('results');
+    els.statRows = $('statRows');
+    els.statRange = $('statRange');
+    els.statMean = $('statMean');
+    els.statMin = $('statMin');
+    els.statMax = $('statMax');
+    els.chartSub = $('chartSub');
+    els.canvas = $('chart');
+    els.tip = $('tip');
+
+    els.drop.addEventListener('click', function () { els.input.click(); });
+
+    els.drop.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        els.input.click();
+      }
+    });
+
+    els.input.addEventListener('change', function () {
+      const file = els.input.files && els.input.files[0];
+      if (file) loadFile(file);
+      els.input.value = '';
+    });
+
+    ['dragenter', 'dragover'].forEach(function (name) {
+      els.drop.addEventListener(name, function (e) {
+        e.preventDefault();
+        els.drop.classList.add('drag');
+      });
+    });
+
+    ['dragleave', 'drop'].forEach(function (name) {
+      els.drop.addEventListener(name, function (e) {
+        e.preventDefault();
+        els.drop.classList.remove('drag');
+      });
+    });
+
+    els.drop.addEventListener('drop', function (e) {
+      const file = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if (file) loadFile(file);
+    });
+
+    window.addEventListener('dragover', function (e) { e.preventDefault(); });
+    window.addEventListener('drop', function (e) { e.preventDefault(); });
+
+    els.canvas.addEventListener('mousemove', onMove);
+    els.canvas.addEventListener('mouseleave', onLeave);
+
+    if (typeof ResizeObserver === 'function') {
+      new ResizeObserver(function () { if (current) requestAnimationFrame(draw); })
+        .observe(els.canvas.parentElement);
+    } else {
+      window.addEventListener('resize', function () { if (current) draw(); });
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>
